@@ -150,12 +150,6 @@ class TransE:
     def launch_evaluation(self, session, saver):
         eval_result_queue = mp.JoinableQueue()
         rank_result_queue = mp.Queue()
-        print('-----Save checkpoint-----')
-        step_str = str(self.global_step.eval(session=session))
-        save_path = self.ckpt_dir + '/' + self.model_name + step_str + '.ckpt'
-        saver_path = saver.save(session, save_path)
-        tf.saved_model.simple_save(session, self.ckpt_dir + '/model-' + step_str, inputs={'triple': self.eval_triple}, outputs={'entity-embedding': self.entity_embedding, 'relation-embedding': self.relation_embedding})
-        print("Model saved in path: %s" % saver_path)
 
         print('-----Start evaluation-----')
         start = timeit.default_timer()
