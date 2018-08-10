@@ -9,8 +9,11 @@ from dataset import KnowledgeGraph
 class TransE:
     def __init__(self, kg: KnowledgeGraph,
                  embedding_dim, margin_value, score_func,
-                 batch_size, learning_rate, n_generator, n_rank_calculator):
+                 batch_size, learning_rate, n_generator, n_rank_calculator,
+                 model_name, ckpt_dir):
         self.kg = kg
+        self.model_name = model_name
+        self.ckpt_dir = ckpt_dir
         self.embedding_dim = embedding_dim
         self.margin_value = margin_value
         self.score_func = score_func
@@ -108,6 +111,7 @@ class TransE:
         return idx_head_prediction, idx_tail_prediction
 
     def launch_training(self, session, summary_writer):
+        
         raw_batch_queue = mp.Queue()
         training_batch_queue = mp.Queue()
         for _ in range(self.n_generator):
@@ -143,9 +147,16 @@ class TransE:
         print('-----Finish training-----')
         self.check_norm(session=session)
 
-    def launch_evaluation(self, session):
+    def launch_evaluation(self, session, saver):
         eval_result_queue = mp.JoinableQueue()
         rank_result_queue = mp.Queue()
+        print('-----Save checkpoint-----')
+        step_str = str(self.global_step.eval(session=session))
+        save_path = self.ckpt_dir + '/' + self.model_name + step_str + '.ckpt'
+        saver_path = saver.save(session, save_path)
+        tf.saved_model.simple_save(session, self.ckpt_dir + '/model-' + step_str, inputs={'triple': self.eval_triple}, outputs={'entity-embedding': self.entity_embedding, 'relation-embedding': self.relation_embedding})
+        print("Model saved in path: %s" % saver_path)
+
         print('-----Start evaluation-----')
         start = timeit.default_timer()
         for _ in range(self.n_rank_calculator):
@@ -218,6 +229,7 @@ class TransE:
                                                          (head_hits10_filter + tail_hits10_filter) / 2))
         print('cost time: {:.3f}s'.format(timeit.default_timer() - start))
         print('-----Finish evaluation-----')
+
 
     def calculate_rank(self, in_queue, out_queue):
         while True:

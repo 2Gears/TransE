@@ -16,6 +16,7 @@ def main():
     parser.add_argument('--n_generator', type=int, default=24)
     parser.add_argument('--n_rank_calculator', type=int, default=24)
     parser.add_argument('--ckpt_dir', type=str, default='../ckpt/')
+    parser.add_argument('--model_name', type=str)
     parser.add_argument('--summary_dir', type=str, default='../summary/')
     parser.add_argument('--max_epoch', type=int, default=500)
     parser.add_argument('--eval_freq', type=int, default=10)
@@ -24,8 +25,9 @@ def main():
     kg = KnowledgeGraph(data_dir=args.data_dir)
     kge_model = TransE(kg=kg, embedding_dim=args.embedding_dim, margin_value=args.margin_value,
                        score_func=args.score_func, batch_size=args.batch_size, learning_rate=args.learning_rate,
-                       n_generator=args.n_generator, n_rank_calculator=args.n_rank_calculator)
-    gpu_config = tf.GPUOptions(allow_growth=True)
+                       n_generator=args.n_generator, n_rank_calculator=args.n_rank_calculator,
+                       model_name=args.model_name, ckpt_dir=args.ckpt_dir)
+    gpu_config = tf.GPUOptions(allow_growth=False)
     sess_config = tf.ConfigProto(gpu_options=gpu_config)
     with tf.Session(config=sess_config) as sess:
         print('-----Initializing tf graph-----')
@@ -33,11 +35,12 @@ def main():
         print('-----Initialization accomplished-----')
         kge_model.check_norm(session=sess)
         summary_writer = tf.summary.FileWriter(logdir=args.summary_dir, graph=sess.graph)
+        saver = tf.train.Saver()
         for epoch in range(args.max_epoch):
             print('=' * 30 + '[EPOCH {}]'.format(epoch) + '=' * 30)
             kge_model.launch_training(session=sess, summary_writer=summary_writer)
             if (epoch + 1) % args.eval_freq == 0:
-                kge_model.launch_evaluation(session=sess)
+                kge_model.launch_evaluation(session=sess, saver=saver)
 
 
 if __name__ == '__main__':
