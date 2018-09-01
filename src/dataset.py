@@ -31,12 +31,14 @@ class KnowledgeGraph:
         print('-----Loading entity dict-----')
         entity_df = pd.read_table(os.path.join(self.data_dir, entity_dict_file), header=None)
         self.entity_dict = dict(zip(entity_df[0], entity_df[1]))
+        self.entity_dict_r = dict(zip(entity_df[1], entity_df[0]))
         self.n_entity = len(self.entity_dict)
         self.entities = list(self.entity_dict.values())
         print('#entity: {}'.format(self.n_entity))
         print('-----Loading relation dict-----')
         relation_df = pd.read_table(os.path.join(self.data_dir, relation_dict_file), header=None)
         self.relation_dict = dict(zip(relation_df[0], relation_df[1]))
+        self.relation_dict_r = dict(zip(relation_df[1], relation_df[0]))
         self.n_relation = len(self.relation_dict)
         print('#relation: {}'.format(self.n_relation))
 
@@ -46,6 +48,7 @@ class KnowledgeGraph:
         test_file = 'test.txt'
         print('-----Loading training triples-----')
         training_df = pd.read_table(os.path.join(self.data_dir, training_file), header=None)
+        print(training_df)
         self.training_triples = list(zip([self.entity_dict[h] for h in training_df[0]],
                                          [self.entity_dict[t] for t in training_df[1]],
                                          [self.relation_dict[r] for r in training_df[2]]))

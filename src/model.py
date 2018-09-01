@@ -42,7 +42,8 @@ class TransE:
                                                                                               maxval=bound))
             tf.summary.histogram(name=self.entity_embedding.op.name, values=self.entity_embedding)
             self.relation_embedding = tf.get_variable(name='relation',
-                                                      shape=[kg.n_relation, self.embedding_dim],
+                                                      shape=[
+                                                          kg.n_relation, self.embedding_dim, self.embedding_dim],
                                                       initializer=tf.random_uniform_initializer(minval=-bound,
                                                                                                 maxval=bound))
             tf.summary.histogram(name=self.relation_embedding.op.name, values=self.relation_embedding)
@@ -55,6 +56,7 @@ class TransE:
             self.relation_embedding = tf.nn.l2_normalize(self.relation_embedding, dim=1)
         with tf.name_scope('training'):
             distance_pos, distance_neg = self.infer(self.triple_pos, self.triple_neg)
+            print('distance_pos', tf.shape(distance_pos))
             self.loss = self.calculate_loss(distance_pos, distance_neg, self.margin)
             tf.summary.scalar(name=self.loss.op.name, tensor=self.loss)
             optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
@@ -66,6 +68,7 @@ class TransE:
             self.idx_head_prediction, self.idx_tail_prediction = self.evaluate(self.eval_triple)
 
     def infer(self, triple_pos, triple_neg):
+        print('INFER')
         with tf.name_scope('lookup'):
             head_pos = tf.nn.embedding_lookup(self.entity_embedding, triple_pos[:, 0])
             tail_pos = tf.nn.embedding_lookup(self.entity_embedding, triple_pos[:, 1])
@@ -74,8 +77,8 @@ class TransE:
             tail_neg = tf.nn.embedding_lookup(self.entity_embedding, triple_neg[:, 1])
             relation_neg = tf.nn.embedding_lookup(self.relation_embedding, triple_neg[:, 2])
         with tf.name_scope('link'):
-            distance_pos = head_pos + relation_pos - tail_pos
-            distance_neg = head_neg + relation_neg - tail_neg
+            distance_pos = tf.einsum('ln,lnm->lm', head_pos, relation_pos) - tail_pos
+            distance_neg = tf.einsum('ln,lnm->lm', head_neg, relation_neg) - tail_neg
         return distance_pos, distance_neg
 
     def calculate_loss(self, distance_pos, distance_neg, margin):
@@ -89,14 +92,52 @@ class TransE:
             loss = tf.reduce_sum(tf.nn.relu(margin + score_pos - score_neg), name='max_margin_loss')
         return loss
 
+    def batch_matmul(self, A, B, transpose_a=False, transpose_b=False):
+        print('BATCH MATMUL')
+        '''Batch support for matrix matrix product.
+
+        Args:
+            A: General matrix of size (A_Batch, M, X).
+            B: General matrix of size (B_Batch, X, N).
+            transpose_a: Whether A is transposed (A_Batch, X, M).
+            transpose_b: Whether B is transposed (B_Batch, N, X).
+
+        Returns:
+            The result of multiplying A with B (A_Batch, B_Batch, M, N).
+            Works more efficiently if B_Batch is empty.
+        '''
+        Andim = len(A.shape)
+        Bndim = len(B.shape)
+        if Andim == Bndim:
+            return tf.matmul(A, B, transpose_a=transpose_a,
+                            transpose_b=transpose_b)  # faster than tensordot
+        with tf.name_scope('matmul'):
+            a_index = Andim - (2 if transpose_a else 1)
+            b_index = Bndim - (1 if transpose_b else 2)
+            AB = tf.tensordot(A, B, axes=[a_index, b_index])
+            if Bndim > 2:  # only if B is batched, rearrange the axes
+                A_Batch = np.arange(Andim - 2)
+                M = len(A_Batch)
+                B_Batch = (M + 1) + np.arange(Bndim - 2)
+                N = (M + 1) + len(B_Batch)
+                perm = np.concatenate((A_Batch, B_Batch, [M, N]))
+                AB = tf.transpose(AB, perm)
+        return AB
+
     def evaluate(self, eval_triple):
+        print('EVALUATE')
         with tf.name_scope('lookup'):
             head = tf.nn.embedding_lookup(self.entity_embedding, eval_triple[0])
             tail = tf.nn.embedding_lookup(self.entity_embedding, eval_triple[1])
             relation = tf.nn.embedding_lookup(self.relation_embedding, eval_triple[2])
         with tf.name_scope('link'):
-            distance_head_prediction = self.entity_embedding + relation - tail
-            distance_tail_prediction = head + relation - self.entity_embedding
+            print('SUBWAY')
+            distance_head_prediction = self.batch_matmul(
+                self.entity_embedding, relation) - tail
+            # print('SUBMARINE', ().shape)
+
+            distance_tail_prediction = tf.einsum(
+                'n,nm->m', head, relation) - self.entity_embedding
         with tf.name_scope('rank'):
             if self.score_func == 'L1':  # L1 score
                 _, idx_head_prediction = tf.nn.top_k(tf.reduce_sum(tf.abs(distance_head_prediction), axis=1),
@@ -130,6 +171,7 @@ class TransE:
         n_used_triple = 0
         for i in range(n_batch):
             batch_pos, batch_neg = training_batch_queue.get()
+            print('bitch_loss')
             batch_loss, _, summary = session.run(fetches=[self.loss, self.train_op, self.merge],
                                                  feed_dict={self.triple_pos: batch_pos,
                                                             self.triple_neg: batch_neg,

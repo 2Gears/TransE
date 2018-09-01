@@ -48,7 +48,8 @@ def main():
       step_str = str(kge_model.global_step.eval(session=sess))
       save_path = args.ckpt_dir + '/' + args.model_name + step_str + '.ckpt'
       saver_path = saver.save(sess, save_path)
-      tf.saved_model.simple_save(sess, args.ckpt_dir + '/model-' + step_str, inputs={'triple': args.eval_triple}, outputs={'entity-embedding': self.entity_embedding, 'relation-embedding': self.relation_embedding})
+      tf.saved_model.simple_save(sess, args.ckpt_dir + '/model-' + step_str, inputs={'triple': kge_model.eval_triple}, outputs={
+                                 'entity-embedding': kge_model.entity_embedding, 'relation-embedding': kge_model.relation_embedding})
 
       print("Model saved in path: %s" % saver_path)
 
